@@ -33,9 +33,9 @@ func main() {
 		case "echo":
 			fmt.Println(strings.Join(args, " "))
 		case "type":
-			arg1 := args[1]
+			arg1 := args[0]
 			if slices.Contains(cmds, arg1) {
-				fmt.Println(arg1 + ": is a shell bultin")
+				fmt.Println(arg1 + " is a shell builtin")
 			} else {
 				fmt.Println(arg1 + ": not found")
 			}
