@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var cmds = []string{"exit", "echo", "type", "pwd"}
+var cmds = []string{"exit", "echo", "type", "pwd", "cd"}
 
 func main() {
 	for {
@@ -45,6 +45,24 @@ func main() {
 				continue
 			}
 			fmt.Println(dir)
+		case "cd":
+			if len(args) == 0 {
+				fmt.Fprintln(os.Stdout, "cd: missing argument")
+				continue
+			}
+			if args[0] == "~" {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					fmt.Fprintf(os.Stdout, "Error getting home directory: %v\n", err)
+					continue
+				}
+				args[0] = homeDir
+			}
+			err := os.Chdir(args[0])
+			if err != nil {
+				fmt.Fprintf(os.Stdout, "cd: %s: No such file or directory\n", args[0])
+				continue
+			}
 		case "type":
 			if len(args) == 0 {
 				fmt.Fprintln(os.Stdout, "type: missing argument")
