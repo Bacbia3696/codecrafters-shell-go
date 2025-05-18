@@ -40,9 +40,8 @@ func GetCommand(commandName string) string {
 func HandleExternalCommand(command string, args []string) {
 	foundPath := GetCommand(command) // Use the GetCommand from this package
 	if foundPath != "" {
-		// The original code used `exec.Command(command, args...)` which might rely on PATH search again.
-		// It's better to use `foundPath` as the command to execute directly.
-		cmd := exec.Command(foundPath, args...)
+		// keep using command, because test case assert command is first argument
+		cmd := exec.Command(command, args...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
