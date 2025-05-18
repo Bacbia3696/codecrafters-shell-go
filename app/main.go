@@ -20,7 +20,7 @@ func main() {
 		inputLine, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil {
 			if err.Error() == "EOF" { // Check for EOF to exit gracefully
-				fmt.Println("exit") // Optional: print exit message like a real shell
+				fmt.Fprintln(os.Stdout, "exit")
 				os.Exit(0)
 			}
 			fmt.Fprintf(os.Stderr, "Error reading command: %v\n", err)

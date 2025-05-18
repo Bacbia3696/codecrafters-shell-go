@@ -3,7 +3,7 @@ package builtins
 import (
 	"fmt"
 	"os"
-	"slices" // Go 1.21+ for slices package, ensure compatibility or use local equivalent for older versions
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -22,13 +22,6 @@ var builtInCmdsList = []string{"exit", "echo", "type", "pwd", "cd"}
 
 // IsBuiltin checks if a command name is a known built-in command.
 func IsBuiltin(cmdName string) bool {
-	// For older Go versions that don't have slices.Contains:
-	// for _, b := range builtInCmdsList {
-	// 	if b == cmdName {
-	// 		return true
-	// 	}
-	// }
-	// return false
 	return slices.Contains(builtInCmdsList, cmdName)
 }
 
@@ -48,7 +41,7 @@ func HandleExit(args []string) {
 
 // HandleEcho handles the 'echo' built-in command.
 func HandleEcho(args []string) {
-	fmt.Println(strings.Join(args, " "))
+	fmt.Fprintln(os.Stdout, strings.Join(args, " "))
 }
 
 // HandlePwd handles the 'pwd' built-in command.
@@ -58,7 +51,7 @@ func HandlePwd() {
 		fmt.Fprintf(os.Stderr, "pwd: %v\n", err)
 		return
 	}
-	fmt.Println(dir)
+	fmt.Fprintln(os.Stdout, dir)
 }
 
 // HandleCd handles the 'cd' built-in command.
