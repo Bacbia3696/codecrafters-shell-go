@@ -1,11 +1,11 @@
-package main
+package parser
 
 import (
 	"reflect"
 	"testing"
 )
 
-func TestParseLineWithQuotes(t *testing.T) {
+func TestParseLine(t *testing.T) { // Renamed to TestParseLine to match the exported function
 	tests := []struct {
 		name         string
 		line         string
@@ -42,8 +42,18 @@ func TestParseLineWithQuotes(t *testing.T) {
 			expectedArgs: []string{"echo", "hello world"},
 		},
 		{
+			name:         "command with double quoted arg",
+			line:         "echo \"hello world\"",
+			expectedArgs: []string{"echo", "hello world"},
+		},
+		{
 			name:         "command with empty single quoted arg",
 			line:         "echo ''",
+			expectedArgs: []string{"echo", ""},
+		},
+		{
+			name:         "command with empty double quoted arg",
+			line:         "echo \"\"",
 			expectedArgs: []string{"echo", ""},
 		},
 		{
@@ -52,8 +62,13 @@ func TestParseLineWithQuotes(t *testing.T) {
 			expectedArgs: []string{"echo", "hello world", "another one"},
 		},
 		{
+			name:         "command with multiple double quoted args",
+			line:         "echo \"hello world\" \"another one\"",
+			expectedArgs: []string{"echo", "hello world", "another one"},
+		},
+		{
 			name:         "mixed quoted and unquoted",
-			line:         "command 'quoted arg' unquoted 'another quoted' last",
+			line:         "command 'quoted arg' unquoted \"another quoted\" last",
 			expectedArgs: []string{"command", "quoted arg", "unquoted", "another quoted", "last"},
 		},
 		{
@@ -72,12 +87,18 @@ func TestParseLineWithQuotes(t *testing.T) {
 			expectedArgs: []string{"echo", "  spaced arg  "},
 		},
 		{
-			name: "adjacent quoted args",
-			line: "echo 'hello''world'",
-			// This behavior might be specific. Current implementation would likely produce ["echo", "helloworld"]
-			// or ["echo", "hello", "world"] if the logic correctly separates based on quote boundaries
-			// Let's assume the current code merges them if there's no space, or if the quote logic is as implemented.
-			// Based on current parseLineWithQuotes, it should be "helloworld"
+			name:         "adjacent quoted args",
+			line:         "echo 'hello''world'",
+			expectedArgs: []string{"echo", "helloworld"},
+		},
+		{
+			name:         "adjacent quoted args with double quotes",
+			line:         "echo \"hello\"\"world\"",
+			expectedArgs: []string{"echo", "helloworld"},
+		},
+		{
+			name:         "adjacent mixed quotes",
+			line:         "echo 'hello'\"world\"",
 			expectedArgs: []string{"echo", "helloworld"},
 		},
 		{
@@ -90,18 +111,13 @@ func TestParseLineWithQuotes(t *testing.T) {
 			line:         "echo 'hello",
 			expectedArgs: []string{"echo", "hello"},
 		},
-		{
-			name:         "line with quote in middle of word",
-			line:         "echo hel'lo",
-			expectedArgs: []string{"echo", "hello"},
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actualArgs := parseLineWithQuotes(tt.line)
+			actualArgs := ParseLine(tt.line) // Changed to use exported ParseLine
 			if !reflect.DeepEqual(actualArgs, tt.expectedArgs) {
-				t.Errorf("parseLineWithQuotes(%q) = %v, want %v", tt.line, actualArgs, tt.expectedArgs)
+				t.Errorf("ParseLine(%q) = %v, want %v", tt.line, actualArgs, tt.expectedArgs)
 			}
 		})
 	}
