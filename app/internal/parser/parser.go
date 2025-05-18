@@ -1,31 +1,96 @@
 package parser
 
 import (
+	"errors"
 	"strings"
 )
 
-// ParseLine splits a line into arguments, respecting single and double quotes.
+// splitByRedirect scans the line for the first unquoted redirection operator ('>' or '1>')
+// and splits the line into a command part and a filename part.
+// It returns the command part, filename part, and a boolean indicating if redirection was found.
+func splitByRedirect(line string) (commandPart string, filenamePart string, foundRedirect bool) {
+	runes := []rune(line)
+	n := len(runes)
+	activeQuoteChar := rune(0)
+
+	// First, try to find "1>" where '1' is standalone
+	for i := 0; i < n-1; i++ { // Iterate up to n-2 to check runes[i] and runes[i+1]
+		char := runes[i]
+		if char == '\'' || char == '"' {
+			if activeQuoteChar == 0 {
+				activeQuoteChar = char
+			} else if activeQuoteChar == char {
+				activeQuoteChar = 0
+			}
+		} else if activeQuoteChar == 0 && char == '1' && runes[i+1] == '>' {
+			// Found "1>". Check if '1' is standalone (start of line or preceded by space).
+			if i == 0 || runes[i-1] == ' ' {
+				commandPart = strings.TrimSpace(string(runes[:i]))
+				filenamePart = strings.TrimSpace(string(runes[i+2:]))
+				return commandPart, filenamePart, true
+			}
+		}
+	}
+
+	// If "1>" wasn't found or wasn't applicable, try to find ">"
+	activeQuoteChar = rune(0) // Reset quote tracking for this scan
+	for i := 0; i < n; i++ {
+		char := runes[i]
+		if char == '\'' || char == '"' {
+			if activeQuoteChar == 0 {
+				activeQuoteChar = char
+			} else if activeQuoteChar == char {
+				activeQuoteChar = 0
+			}
+		} else if activeQuoteChar == 0 && char == '>' {
+			// Found ">"
+			commandPart = strings.TrimSpace(string(runes[:i]))
+			filenamePart = strings.TrimSpace(string(runes[i+1:]))
+			return commandPart, filenamePart, true
+		}
+	}
+
+	return line, "", false // No redirect operator found, commandPart is the original line
+}
+
+// ParseLine splits a line into arguments and an output filename if redirection is present.
+// It handles '>' and '1>' output redirection operators.
 // Text within quotes is treated as a single argument, and the quotes are removed.
-// e.g., echo 'hello world' "it's fine" foo -> ["echo", "hello world", "it's fine", "foo"]
-func ParseLine(line string) []string {
-	args := make([]string, 0)
+// e.g., echo 'hello world' > out.txt -> args=["echo", "hello world"], outputFile="out.txt"
+func ParseLine(line string) (args []string, outputFile string, err error) {
+	args = make([]string, 0) // Ensure args is initialized
+
+	trimmedOriginalLine := strings.TrimSpace(line)
+	if trimmedOriginalLine == "" {
+		return args, "", nil // Empty line results in no arguments and no redirection
+	}
+
+	commandPartStr, filenameStr, redirectFound := splitByRedirect(trimmedOriginalLine)
+
+	if redirectFound {
+		if filenameStr == "" {
+			return nil, "", errors.New("missing filename for redirection")
+		}
+		outputFile = filenameStr
+		// commandPartStr now contains the command and its arguments to be parsed
+	}
+	// If no redirect, commandPartStr is trimmedOriginalLine, and outputFile is ""
+
+	// Proceed to parse commandPartStr using the existing argument parsing logic
 	var currentArg strings.Builder
 	var activeQuoteChar rune = 0 // 0 means not in quotes, '\'' or '"' means in that quote type
-
-	trimmedLine := strings.TrimSpace(line)
-	if trimmedLine == "" {
-		return args
-	}
-	lineRunes := []rune(trimmedLine)
-
 	justClosedEmptyQuote := false
 
-	for i := 0; i < len(lineRunes); i++ {
+	// If commandPartStr is empty (e.g., line was "> out.txt"), no args to parse.
+	if strings.TrimSpace(commandPartStr) == "" {
+		return args, outputFile, nil
+	}
+
+	lineRunes := []rune(strings.TrimSpace(commandPartStr)) // Parse the command part
+
+	for i := range len(lineRunes) {
 		char := lineRunes[i]
 
-		// Reset flag at the start of each character processing,
-		// unless it's a space immediately following the closure of an empty quote.
-		// (If it's a space AND we just closed an empty quote, we want to process that state first)
 		if !(char == ' ' && justClosedEmptyQuote) {
 			justClosedEmptyQuote = false
 		}
@@ -54,8 +119,9 @@ func ParseLine(line string) []string {
 		}
 	}
 
+	// Add the last argument if any, or if an unclosed quote exists (maintaining original behavior)
 	if currentArg.Len() > 0 || justClosedEmptyQuote || activeQuoteChar != 0 {
 		args = append(args, currentArg.String())
 	}
-	return args
+	return args, outputFile, nil
 }

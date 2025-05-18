@@ -115,7 +115,7 @@ func TestParseLine(t *testing.T) { // Renamed to TestParseLine to match the expo
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actualArgs := ParseLine(tt.line) // Changed to use exported ParseLine
+			actualArgs, _, _ := ParseLine(tt.line) // Changed to use exported ParseLine
 			if !reflect.DeepEqual(actualArgs, tt.expectedArgs) {
 				t.Errorf("ParseLine(%q) = %v, want %v", tt.line, actualArgs, tt.expectedArgs)
 			}
