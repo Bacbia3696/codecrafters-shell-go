@@ -5,120 +5,516 @@ import (
 	"testing"
 )
 
-func TestParseLine(t *testing.T) { // Renamed to TestParseLine to match the exported function
+func TestParseLine(t *testing.T) {
 	tests := []struct {
-		name         string
-		line         string
-		expectedArgs []string
+		name               string
+		line               string
+		expectedArgs       []string
+		expectedOutputFile string
+		expectedErrorFile  string
+		expectError        bool
 	}{
 		{
-			name:         "empty string",
-			line:         "",
-			expectedArgs: []string{},
+			name:               "empty string",
+			line:               "",
+			expectedArgs:       []string{},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "only spaces",
-			line:         "   ",
-			expectedArgs: []string{},
+			name:               "only spaces",
+			line:               "   ",
+			expectedArgs:       []string{},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "simple command",
-			line:         "echo",
-			expectedArgs: []string{"echo"},
+			name:               "simple command",
+			line:               "echo",
+			expectedArgs:       []string{"echo"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "command with one arg",
-			line:         "echo hello",
-			expectedArgs: []string{"echo", "hello"},
+			name:               "command with one arg",
+			line:               "echo hello",
+			expectedArgs:       []string{"echo", "hello"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "command with multiple args",
-			line:         "ls -l /tmp",
-			expectedArgs: []string{"ls", "-l", "/tmp"},
+			name:               "command with multiple args",
+			line:               "ls -l /tmp",
+			expectedArgs:       []string{"ls", "-l", "/tmp"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "command with single quoted arg",
-			line:         "echo 'hello world'",
-			expectedArgs: []string{"echo", "hello world"},
+			name:               "command with single quoted arg",
+			line:               "echo 'hello world'",
+			expectedArgs:       []string{"echo", "hello world"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "command with double quoted arg",
-			line:         "echo \"hello world\"",
-			expectedArgs: []string{"echo", "hello world"},
+			name:               "command with double quoted arg",
+			line:               "echo \"hello world\"",
+			expectedArgs:       []string{"echo", "hello world"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "command with empty single quoted arg",
-			line:         "echo ''",
-			expectedArgs: []string{"echo", ""},
+			name:               "simple output redirection >",
+			line:               "ls > out.txt",
+			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "out.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "command with empty double quoted arg",
-			line:         "echo \"\"",
-			expectedArgs: []string{"echo", ""},
+			name:               "output redirection 1>",
+			line:               "ls 1> out.txt",
+			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "out.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "command with multiple single quoted args",
-			line:         "echo 'hello world' 'another one'",
-			expectedArgs: []string{"echo", "hello world", "another one"},
+			name:               "error redirection 2>",
+			line:               "ls 2> err.txt",
+			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "err.txt",
+			expectError:        false,
 		},
 		{
-			name:         "command with multiple double quoted args",
-			line:         "echo \"hello world\" \"another one\"",
-			expectedArgs: []string{"echo", "hello world", "another one"},
+			name:               "output redirection with args >",
+			line:               "echo hello world > message.txt",
+			expectedArgs:       []string{"echo", "hello world"},
+			expectedOutputFile: "message.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "mixed quoted and unquoted",
-			line:         "command 'quoted arg' unquoted \"another quoted\" last",
-			expectedArgs: []string{"command", "quoted arg", "unquoted", "another quoted", "last"},
+			name:               "error redirection with args 2>",
+			line:               "echo hello world 2> errors.log",
+			expectedArgs:       []string{"echo", "hello world"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "errors.log",
+			expectError:        false,
 		},
 		{
-			name:         "leading and trailing spaces",
-			line:         "  echo hello  ",
-			expectedArgs: []string{"echo", "hello"},
+			name:               "redirection with no space before >",
+			line:               "ls>out.txt",
+			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "out.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "multiple spaces between args",
-			line:         "echo   hello   world",
-			expectedArgs: []string{"echo", "hello", "world"},
+			name:               "redirection with no space before 2>",
+			line:               "ls2>err.txt",
+			expectedArgs:       []string{"ls2>err.txt"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "quoted arg with leading/trailing space inside quotes",
-			line:         "echo '  spaced arg  '",
-			expectedArgs: []string{"echo", "  spaced arg  "},
+			name:               "redirection 2> with space before but not part of command",
+			line:               "ls 2> err.txt",
+			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "err.txt",
+			expectError:        false,
 		},
 		{
-			name:         "adjacent quoted args",
-			line:         "echo 'hello''world'",
-			expectedArgs: []string{"echo", "helloworld"},
+			name:               "redirection with quoted filename >",
+			line:               "echo test > \"file with spaces.txt\"",
+			expectedArgs:       []string{"echo", "test"},
+			expectedOutputFile: "file with spaces.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "adjacent quoted args with double quotes",
-			line:         "echo \"hello\"\"world\"",
-			expectedArgs: []string{"echo", "helloworld"},
+			name:               "redirection with quoted filename ' >",
+			line:               "echo test > 'file with spaces.txt'",
+			expectedArgs:       []string{"echo", "test"},
+			expectedOutputFile: "file with spaces.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "adjacent mixed quotes",
-			line:         "echo 'hello'\"world\"",
-			expectedArgs: []string{"echo", "helloworld"},
+			name:               "redirection with quoted filename 2>",
+			line:               "echo test 2> \"errors file.log\"",
+			expectedArgs:       []string{"echo", "test"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "errors file.log",
+			expectError:        false,
 		},
 		{
-			name:         "complex case with multiple quotes and spaces",
-			line:         " cmd 'arg1 part1' '' arg2 'arg3 part1 part2' ",
-			expectedArgs: []string{"cmd", "arg1 part1", "", "arg2", "arg3 part1 part2"},
+			name:               "redirection operator inside quotes (should not redirect)",
+			line:               "echo \"hello > world\" foo",
+			expectedArgs:       []string{"echo", "hello > world", "foo"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 		{
-			name:         "line ending with an open quote (should be treated as unclosed)",
-			line:         "echo 'hello",
-			expectedArgs: []string{"echo", "hello"},
+			name:               "2> operator inside quotes (should not redirect)",
+			line:               "echo \"hello 2> world\" foo",
+			expectedArgs:       []string{"echo", "hello 2> world", "foo"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "missing filename after >",
+			line:               "echo hello >",
+			expectedArgs:       nil,
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        true,
+		},
+		{
+			name:               "missing filename after 1>",
+			line:               "echo hello 1>",
+			expectedArgs:       nil,
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        true,
+		},
+		{
+			name:               "missing filename after 2>",
+			line:               "echo hello 2>",
+			expectedArgs:       nil,
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        true,
+		},
+		{
+			name:               "only redirection operator >",
+			line:               "> out.txt",
+			expectedArgs:       []string{},
+			expectedOutputFile: "out.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "only redirection operator 2>",
+			line:               "2> err.txt",
+			expectedArgs:       []string{},
+			expectedOutputFile: "",
+			expectedErrorFile:  "err.txt",
+			expectError:        false,
+		},
+		{
+			name:               "Filename with special characters, unquoted",
+			line:               "cmd > file-name_with.chars.123",
+			expectedArgs:       []string{"cmd"},
+			expectedOutputFile: "file-name_with.chars.123",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "Filename that looks like a redirection but isn't (part of arg)",
+			line:               "echo arg1>notfile arg2",
+			expectedArgs:       []string{"echo", "arg1>notfile", "arg2"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "command with multiple single quoted args",
+			line:               "echo 'hello world' 'another one'",
+			expectedArgs:       []string{"echo", "hello world", "another one"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "command with multiple double quoted args",
+			line:               "echo \"hello world\" \"another one\"",
+			expectedArgs:       []string{"echo", "hello world", "another one"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "mixed quoted and unquoted",
+			line:               "command 'quoted arg' unquoted \"another quoted\" last",
+			expectedArgs:       []string{"command", "quoted arg", "unquoted", "another quoted", "last"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "leading and trailing spaces",
+			line:               "  echo hello  ",
+			expectedArgs:       []string{"echo", "hello"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "multiple spaces between args",
+			line:               "echo   hello   world",
+			expectedArgs:       []string{"echo", "hello", "world"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "quoted arg with leading/trailing space inside quotes",
+			line:               "echo '  spaced arg  '",
+			expectedArgs:       []string{"echo", "  spaced arg  "},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "adjacent quoted args",
+			line:               "echo 'hello''world'",
+			expectedArgs:       []string{"echo", "helloworld"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "adjacent quoted args with double quotes",
+			line:               "echo \"hello\"\"world\"",
+			expectedArgs:       []string{"echo", "helloworld"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "adjacent mixed quotes",
+			line:               "echo 'hello'\"world\"",
+			expectedArgs:       []string{"echo", "helloworld"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "complex case with multiple quotes and spaces",
+			line:               " cmd 'arg1 part1' '' arg2 'arg3 part1 part2' ",
+			expectedArgs:       []string{"cmd", "arg1 part1", "", "arg2", "arg3 part1 part2"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "line ending with an open quote (should be treated as unclosed)",
+			line:               "echo 'hello",
+			expectedArgs:       []string{"echo", "hello"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "command with empty single quoted arg",
+			line:               "echo ''",
+			expectedArgs:       []string{"echo", ""},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "command with empty double quoted arg",
+			line:               "echo \"\"",
+			expectedArgs:       []string{"echo", ""},
+			expectedOutputFile: "",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "output redirection 1> with no space after",
+			line:               "ls 1>out.txt",
+			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "out.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "output redirection 1> with no space before (but space after 1)",
+			line:               "ls 1 > out.txt",
+			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "out.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "output redirection with args 1>",
+			line:               "echo hello world 1> message.txt",
+			expectedArgs:       []string{"echo", "hello world"},
+			expectedOutputFile: "message.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
+		},
+		{
+			name:               "redirection with no space after >",
+			line:               "ls >out.txt",
+			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "out.txt",
+			expectedErrorFile:  "",
+			expectError:        false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actualArgs, _, _ := ParseLine(tt.line) // Changed to use exported ParseLine
-			if !reflect.DeepEqual(actualArgs, tt.expectedArgs) {
-				t.Errorf("ParseLine(%q) = %v, want %v", tt.line, actualArgs, tt.expectedArgs)
+			args, outputFile, errorFile, err := ParseLine(tt.line)
+
+			if (err != nil) != tt.expectError {
+				t.Errorf("ParseLine() error = %v, expectError %v", err, tt.expectError)
+				return
+			}
+			if !reflect.DeepEqual(args, tt.expectedArgs) {
+				t.Errorf("ParseLine() args = %v, want %v", args, tt.expectedArgs)
+			}
+			if outputFile != tt.expectedOutputFile {
+				t.Errorf("ParseLine() outputFile = %v, want %v", outputFile, tt.expectedOutputFile)
+			}
+			if errorFile != tt.expectedErrorFile {
+				t.Errorf("ParseLine() errorFile = %v, want %v", errorFile, tt.expectedErrorFile)
 			}
 		})
+	}
+}
+
+func TestParseLineEmpty(t *testing.T) {
+	args, stdout, stderr, err := ParseLine("")
+	if err != nil {
+		t.Errorf("Expected no error for empty line but got: %v", err)
+	}
+	if len(args) != 0 {
+		t.Errorf("Expected empty args but got: %v", args)
+	}
+	if stdout != "" {
+		t.Errorf("Expected empty stdout but got: %s", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("Expected empty stderr but got: %s", stderr)
+	}
+}
+
+func TestParseLineSimpleCommand(t *testing.T) {
+	args, stdout, stderr, err := ParseLine("echo hello world")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	expected := []string{"echo", "hello", "world"}
+	if !reflect.DeepEqual(args, expected) {
+		t.Errorf("Expected args %v but got: %v", expected, args)
+	}
+	if stdout != "" || stderr != "" {
+		t.Errorf("Expected empty stdout/stderr but got stdout=%s stderr=%s", stdout, stderr)
+	}
+}
+
+func TestParseLineWithQuotes(t *testing.T) {
+	args, stdout, stderr, err := ParseLine("echo 'hello world' \"another quote\"")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	expected := []string{"echo", "hello world", "another quote"}
+	if !reflect.DeepEqual(args, expected) {
+		t.Errorf("Expected args %v but got: %v", expected, args)
+	}
+	if stdout != "" || stderr != "" {
+		t.Errorf("Expected empty stdout/stderr but got stdout=%s stderr=%s", stdout, stderr)
+	}
+}
+
+func TestParseLineStdoutRedirection(t *testing.T) {
+	args, stdout, stderr, err := ParseLine("echo hello > out.txt")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	expected := []string{"echo", "hello"}
+	if !reflect.DeepEqual(args, expected) {
+		t.Errorf("Expected args %v but got: %v", expected, args)
+	}
+	if stdout != "out.txt" {
+		t.Errorf("Expected stdout=out.txt but got: %s", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("Expected empty stderr but got: %s", stderr)
+	}
+}
+
+func TestParseLineStderrRedirection(t *testing.T) {
+	args, stdout, stderr, err := ParseLine("ls /nonexistent 2> err.txt")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	expected := []string{"ls", "/nonexistent"}
+	if !reflect.DeepEqual(args, expected) {
+		t.Errorf("Expected args %v but got: %v", expected, args)
+	}
+	if stdout != "" {
+		t.Errorf("Expected empty stdout but got: %s", stdout)
+	}
+	if stderr != "err.txt" {
+		t.Errorf("Expected stderr=err.txt but got: %s", stderr)
+	}
+}
+
+func TestParseLineNestedQuotes(t *testing.T) {
+	args, stdout, stderr, err := ParseLine("echo \"It's a 'quoted' string\"")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	expected := []string{"echo", "It's a 'quoted' string"}
+	if !reflect.DeepEqual(args, expected) {
+		t.Errorf("Expected args %v but got: %v", expected, args)
+	}
+	if stdout != "" || stderr != "" {
+		t.Errorf("Expected empty stdout/stderr but got stdout=%s stderr=%s", stdout, stderr)
+	}
+}
+
+func TestParseLineEmptyQuotes(t *testing.T) {
+	args, stdout, stderr, err := ParseLine("echo '' \"\"")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	expected := []string{"echo", "", ""}
+	if !reflect.DeepEqual(args, expected) {
+		t.Errorf("Expected args %v but got: %v", expected, args)
+	}
+	if stdout != "" || stderr != "" {
+		t.Errorf("Expected empty stdout/stderr but got stdout=%s stderr=%s", stdout, stderr)
+	}
+}
+
+func TestParseLineMissingFilename(t *testing.T) {
+	_, _, _, err := ParseLine("echo hello >")
+	if err == nil {
+		t.Errorf("Expected error for missing filename but got none")
+	}
+}
+
+func TestParseLineQuotedRedirection(t *testing.T) {
+	args, stdout, stderr, err := ParseLine("echo hello > 'my file.txt'")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	expected := []string{"echo", "hello"}
+	if !reflect.DeepEqual(args, expected) {
+		t.Errorf("Expected args %v but got: %v", expected, args)
+	}
+	if stdout != "my file.txt" {
+		t.Errorf("Expected stdout='my file.txt' but got: %s", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("Expected empty stderr but got: %s", stderr)
 	}
 }

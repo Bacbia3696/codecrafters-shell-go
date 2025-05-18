@@ -1,0 +1,38 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Effective Interface Usage in Go (OCP, ISP, DIP)
+
+Go's interfaces are a cornerstone for writing flexible, maintainable, and testable code. Proper use of interfaces helps adhere to several SOLID principles, notably the Open/Closed Principle (OCP), Interface Segregation Principle (ISP), and Dependency Inversion Principle (DIP).
+
+## 1. Open/Closed Principle (OCP)
+*Software entities (packages, types, functions) should be open for extension, but closed for modification.*
+- **How Interfaces Help**: Define behavior contracts with interfaces. New functionality can be added by creating new types that implement these interfaces, without changing existing code that depends on the interfaces.
+- **Example**: If the `[executor](mdc:app/internal/executor)` package needs to support different types of command execution (e.g., local, remote), it could define an `Executable` interface. Different execution strategies would then implement this interface.
+
+## 2. Interface Segregation Principle (ISP)
+*Clients should not be forced to depend on interfaces they do not use.*
+- **Small, Focused Interfaces**: Prefer small, specific interfaces over large, monolithic ones. An interface should define a minimal set of methods that a client needs.
+- **Go Idiom**: "Accept interfaces, return structs." Functions should accept the smallest possible interface that provides the needed functionality.
+- **Example**: If a function only needs to read data, it should accept an `io.Reader` rather than a more complex type that happens to implement `io.Reader` among many other methods.
+
+## 3. Dependency Inversion Principle (DIP)
+*High-level modules should not depend on low-level modules. Both should depend on abstractions (interfaces). Abstractions should not depend on details. Details should depend on abstractions.*
+- **Decoupling**: Interfaces act as abstractions that decouple high-level policy code from low-level implementation details.
+- **Testability**: By depending on interfaces, high-level modules can be easily tested by providing mock implementations of those interfaces.
+- **Example**: Instead of the `app` (main application logic, a high-level module) directly depending on a concrete `[parser.Parser](mdc:app/internal/parser/parser.go)` (a lower-level module), it could depend on a `ParserInterface` defined by the `app` or a shared contracts package. The `parser.Parser` would then implement this interface.
+
+## Guidelines for Defining and Using Interfaces:
+- **Define Interfaces in the Client Package**: Often, the package that *uses* the interface is the best place to define it. This aligns with ISP, as the client defines exactly what it needs.
+- **Implicit Implementation**: Go's interfaces are implemented implicitly. A type satisfies an interface if it declares all the methods in the interface signature. There's no `implements` keyword.
+- **Zero-Value Usability**: Consider if the zero-value of an interface (which is `nil`) has a meaningful interpretation or if functions accepting the interface should always check for `nil`.
+- **Single-Method Interfaces**: These are common and often named with an `-er` suffix (e.g., `io.Reader`, `fmt.Stringer`).
+
+## When to Use Interfaces:
+- **Multiple Implementations**: When you anticipate having different implementations of a component or behavior.
+- **Decoupling Packages**: To reduce direct dependencies between packages, especially between high-level business logic and low-level implementation details.
+- **Improving Testability**: To allow for mock implementations during unit testing. For example, `[parser_test.go](mdc:app/internal/parser/parser_test.go)` tests the `ParseLine` function without needing a live execution environment.
+
+By thoughtfully applying interfaces, we can build more robust, modular, and adaptable Go applications.

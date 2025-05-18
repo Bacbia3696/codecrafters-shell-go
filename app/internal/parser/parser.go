@@ -1,80 +1,113 @@
 package parser
 
 import (
-	"errors"
 	"strings"
+
+	shellerrors "github.com/codecrafters-io/shell-starter-go/app/internal/errors"
 )
 
-// splitByRedirect scans the line for the first unquoted redirection operator ('>' or '1>')
-// and splits the line into a command part and a filename part.
-// It returns the command part, filename part, and a boolean indicating if redirection was found.
-func splitByRedirect(line string) (commandPart string, filenamePart string, foundRedirect bool) {
+// RedirectionType defines the type of output redirection.
+// NoRedirection indicates no redirection.
+// StdoutRedirection indicates standard output redirection ('>' or '1>').
+// StderrRedirection indicates standard error redirection ('2>').
+const (
+	NoRedirection = iota
+	StdoutRedirection
+	StderrRedirection
+)
+
+// splitByRedirect scans the line for the first unquoted redirection operator ('>', '1>', or '2>')
+// and splits the line into a command part, a filename part, and the type of redirection.
+// It returns the command part, filename part, redirection type, and a boolean indicating if redirection was found.
+func splitByRedirect(line string) (commandPart string, filenamePart string, redirectType int, foundRedirect bool) {
 	runes := []rune(line)
 	n := len(runes)
 	activeQuoteChar := rune(0)
 
-	// First, try to find "1>" where '1' is standalone
-	for i := 0; i < n-1; i++ { // Iterate up to n-2 to check runes[i] and runes[i+1]
-		char := runes[i]
-		if char == '\'' || char == '"' {
-			if activeQuoteChar == 0 {
-				activeQuoteChar = char
-			} else if activeQuoteChar == char {
-				activeQuoteChar = 0
-			}
-		} else if activeQuoteChar == 0 && char == '1' && runes[i+1] == '>' {
-			// Found "1>". Check if '1' is standalone (start of line or preceded by space).
-			if i == 0 || runes[i-1] == ' ' {
-				commandPart = strings.TrimSpace(string(runes[:i]))
-				filenamePart = strings.TrimSpace(string(runes[i+2:]))
-				return commandPart, filenamePart, true
-			}
-		}
-	}
-
-	// If "1>" wasn't found or wasn't applicable, try to find ">"
-	activeQuoteChar = rune(0) // Reset quote tracking for this scan
+	// Scan for '1>' or '2>' first, then for '>'.
+	// This prioritizes specific stderr/stdout redirection over general output redirection.
 	for i := 0; i < n; i++ {
 		char := runes[i]
-		if char == '\'' || char == '"' {
+		if char == '\'' || char == '"' { // Handle quotes
 			if activeQuoteChar == 0 {
 				activeQuoteChar = char
 			} else if activeQuoteChar == char {
 				activeQuoteChar = 0
 			}
-		} else if activeQuoteChar == 0 && char == '>' {
-			// Found ">"
-			commandPart = strings.TrimSpace(string(runes[:i]))
-			filenamePart = strings.TrimSpace(string(runes[i+1:]))
-			return commandPart, filenamePart, true
+			continue
+		}
+
+		if activeQuoteChar == 0 { // Only look for redirection operators if not inside quotes
+			// Check for '2>'
+			if char == '2' && i+1 < n && runes[i+1] == '>' {
+				if i == 0 || runes[i-1] == ' ' { // Ensure '2' is standalone or preceded by space
+					commandPart = strings.TrimSpace(string(runes[:i]))
+					filenamePart = strings.TrimSpace(string(runes[i+2:]))
+					// Remove quotes from filename if present
+					filenamePart = stripQuotes(filenamePart)
+					return commandPart, filenamePart, StderrRedirection, true
+				}
+			}
+			// Check for '1>'
+			if char == '1' && i+1 < n && runes[i+1] == '>' {
+				if i == 0 || runes[i-1] == ' ' { // Ensure '1' is standalone or preceded by space
+					commandPart = strings.TrimSpace(string(runes[:i]))
+					filenamePart = strings.TrimSpace(string(runes[i+2:]))
+					filenamePart = stripQuotes(filenamePart)
+					return commandPart, filenamePart, StdoutRedirection, true
+				}
+			}
+			// Check for '>'
+			if char == '>' {
+				commandPart = strings.TrimSpace(string(runes[:i]))
+				filenamePart = strings.TrimSpace(string(runes[i+1:]))
+				filenamePart = stripQuotes(filenamePart)
+				return commandPart, filenamePart, StdoutRedirection, true // Default '>' is for stdout
+			}
 		}
 	}
 
-	return line, "", false // No redirect operator found, commandPart is the original line
+	return line, "", NoRedirection, false // No redirect operator found, commandPart is the original line
+}
+
+// stripQuotes removes a single layer of leading and trailing quotes (' or ") if present.
+func stripQuotes(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
 }
 
 // ParseLine splits a line into arguments and an output filename if redirection is present.
-// It handles '>' and '1>' output redirection operators.
+// It handles '>', '1>' and '2>' output redirection operators.
 // Text within quotes is treated as a single argument, and the quotes are removed.
 // e.g., echo 'hello world' > out.txt -> args=["echo", "hello world"], outputFile="out.txt"
-func ParseLine(line string) (args []string, outputFile string, err error) {
+// e.g., ls /foo 2> err.txt -> args=["ls", "/foo"], errorFile="err.txt"
+func ParseLine(line string) (args []string, outputFile string, errorFile string, err error) {
 	args = make([]string, 0) // Ensure args is initialized
 
 	trimmedOriginalLine := strings.TrimSpace(line)
 	if trimmedOriginalLine == "" {
-		return args, "", nil // Empty line results in no arguments and no redirection
+		return args, "", "", nil // Empty line results in no arguments and no redirection
 	}
 
-	commandPartStr, filenameStr, redirectFound := splitByRedirect(trimmedOriginalLine)
+	commandPartStr, filenameStr, redirectType, redirectFound := splitByRedirect(trimmedOriginalLine)
 
 	if redirectFound {
 		if filenameStr == "" {
-			return nil, "", errors.New("missing filename for redirection")
+			return nil, "", "", shellerrors.NewParseError("missing filename for redirection")
 		}
-		outputFile = filenameStr
-		// commandPartStr now contains the command and its arguments to be parsed
+		switch redirectType {
+		case StdoutRedirection:
+			outputFile = filenameStr
+		case StderrRedirection:
+			errorFile = filenameStr
+		}
 	}
-	// If no redirect, commandPartStr is trimmedOriginalLine, and outputFile is ""
+
+	// If no redirect, commandPartStr is trimmedOriginalLine, and outputFile/errorFile are ""
 
 	// Proceed to parse commandPartStr using the existing argument parsing logic
 	var currentArg strings.Builder
@@ -83,7 +116,7 @@ func ParseLine(line string) (args []string, outputFile string, err error) {
 
 	// If commandPartStr is empty (e.g., line was "> out.txt"), no args to parse.
 	if strings.TrimSpace(commandPartStr) == "" {
-		return args, outputFile, nil
+		return args, outputFile, errorFile, nil
 	}
 
 	lineRunes := []rune(strings.TrimSpace(commandPartStr)) // Parse the command part
@@ -123,5 +156,5 @@ func ParseLine(line string) (args []string, outputFile string, err error) {
 	if currentArg.Len() > 0 || justClosedEmptyQuote || activeQuoteChar != 0 {
 		args = append(args, currentArg.String())
 	}
-	return args, outputFile, nil
+	return args, outputFile, errorFile, nil
 }

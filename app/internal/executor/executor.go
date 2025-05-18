@@ -2,10 +2,13 @@ package executor
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/codecrafters-io/shell-starter-go/app/internal/errors"
 )
 
 // GetCommand finds the full path of an executable command in the PATH.
@@ -38,13 +41,18 @@ func GetCommand(commandName string) string {
 
 // HandleExternalCommand executes an external command.
 func HandleExternalCommand(command string, args []string) {
-	foundPath := GetCommand(command) // Use the GetCommand from this package
+	HandleExternalCommandWithIO(command, args, os.Stdin, os.Stdout, os.Stderr)
+}
+
+// HandleExternalCommandWithIO executes an external command with custom IO streams.
+func HandleExternalCommandWithIO(command string, args []string, stdin io.Reader, stdout, stderr io.Writer) {
+	foundPath := GetCommand(command)
 	if foundPath != "" {
 		// keep using command, because test case assert command is first argument
 		cmd := exec.Command(command, args...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdin = stdin
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
 		err := cmd.Run()
 		if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
@@ -52,12 +60,13 @@ func HandleExternalCommand(command string, args []string) {
 				// We don't need to print an additional error message for this case.
 				_ = exitErr // Suppress unused variable warning
 			} else {
-				// This error means the command failed to start (e.g., permission issues not caught by GetCommand,
-				// or other exec.Command issues).
-				fmt.Fprintf(os.Stderr, "%s: command failed to start: %v\n", command, err)
+				// This error means the command failed to start
+				shellErr := errors.NewCommandFailedError(command, err.Error())
+				fmt.Fprintf(stderr, "%s\n", shellErr.Error())
 			}
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "%s: command not found\n", command)
+		shellErr := errors.NewCommandNotFoundError(command)
+		fmt.Fprintf(stderr, "%s\n", shellErr.Error())
 	}
 }
