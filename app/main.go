@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var cmds = []string{"exit", "echo", "type"}
+var cmds = []string{"exit", "echo", "type", "pwd"}
 
 func main() {
 	for {
@@ -38,6 +38,13 @@ func main() {
 			os.Exit(exitCode)
 		case "echo":
 			fmt.Println(strings.Join(args, " "))
+		case "pwd":
+			dir, err := os.Getwd()
+			if err != nil {
+				fmt.Fprintf(os.Stdout, "Error getting current working directory: %v\n", err)
+				continue
+			}
+			fmt.Println(dir)
 		case "type":
 			if len(args) == 0 {
 				fmt.Fprintln(os.Stdout, "type: missing argument")
