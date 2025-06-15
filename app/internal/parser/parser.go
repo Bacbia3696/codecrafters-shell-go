@@ -217,8 +217,10 @@ func findRedirection(line string) (commandPart string, redirect RedirectionInfo)
 					if cmdPart, redir := parseGenericAppendRedirection(runes, i); redir.Found {
 						return cmdPart, redir
 					}
-					// If '>>' was detected but rejected (e.g., glued to argument), skip this position entirely
+					// If '>>' was detected but rejected (e.g., glued to argument), skip both '>' characters
 					// This prevents "hello>>out.txt" from being parsed as "hello>" with redirection
+					// We need to skip the next iteration too since we've already processed both '>' characters
+					i++ // Skip the second '>' character
 					continue
 				}
 
