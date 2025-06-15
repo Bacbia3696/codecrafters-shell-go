@@ -27,6 +27,11 @@ func NewIOManager(stdout, stderr io.Writer) *IOManagerImpl {
 
 // SetupRedirection sets up file redirection and returns a cleanup function
 func (m *IOManagerImpl) SetupRedirection(outputFile, errorFile string) (cleanup func(), err error) {
+	return m.SetupRedirectionWithMode(outputFile, errorFile, false, false)
+}
+
+// SetupRedirectionWithMode sets up file redirection with append mode support and returns a cleanup function
+func (m *IOManagerImpl) SetupRedirectionWithMode(outputFile, errorFile string, outputAppend, errorAppend bool) (cleanup func(), err error) {
 	var outFile, errFile *os.File
 
 	// Setup cleanup function that will restore original streams
@@ -43,7 +48,14 @@ func (m *IOManagerImpl) SetupRedirection(outputFile, errorFile string) (cleanup 
 
 	// Setup output redirection
 	if outputFile != "" {
-		outFile, err = os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		var flags int
+		if outputAppend {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		} else {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		}
+
+		outFile, err = os.OpenFile(outputFile, flags, 0644)
 		if err != nil {
 			cleanup()
 			return nil, errors.NewIOError("opening", outputFile, err.Error())
@@ -53,7 +65,14 @@ func (m *IOManagerImpl) SetupRedirection(outputFile, errorFile string) (cleanup 
 
 	// Setup error redirection
 	if errorFile != "" {
-		errFile, err = os.OpenFile(errorFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		var flags int
+		if errorAppend {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_APPEND
+		} else {
+			flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		}
+
+		errFile, err = os.OpenFile(errorFile, flags, 0644)
 		if err != nil {
 			cleanup()
 			return nil, errors.NewIOError("opening", errorFile, err.Error())

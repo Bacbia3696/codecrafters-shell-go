@@ -10,101 +10,294 @@ import (
 // NoRedirection indicates no redirection.
 // StdoutRedirection indicates standard output redirection ('>' or '1>').
 // StderrRedirection indicates standard error redirection ('2>').
+// StdoutAppendRedirection indicates standard output append redirection ('>>').
+// StderrAppendRedirection indicates standard error append redirection ('2>>').
 const (
 	NoRedirection = iota
 	StdoutRedirection
 	StderrRedirection
+	StdoutAppendRedirection
+	StderrAppendRedirection
 )
 
-// splitByRedirect scans the line for the first unquoted redirection operator ('>', '1>', or '2>')
-// and splits the line into a command part, a filename part, and the type of redirection.
-// It returns the command part, filename part, redirection type, and a boolean indicating if redirection was found.
-func splitByRedirect(line string) (commandPart string, filenamePart string, redirectType int, foundRedirect bool) {
+// RedirectionInfo holds information about redirection found in a command
+type RedirectionInfo struct {
+	Type     int
+	Filename string
+	Found    bool
+}
+
+// QuoteTracker helps track quote state while parsing
+type QuoteTracker struct {
+	activeQuoteChar rune
+}
+
+// updateQuoteState updates the quote tracking state
+func (qt *QuoteTracker) updateQuoteState(char rune) {
+	if char == '\'' || char == '"' {
+		if qt.activeQuoteChar == 0 {
+			qt.activeQuoteChar = char
+		} else if qt.activeQuoteChar == char {
+			qt.activeQuoteChar = 0
+		}
+	}
+}
+
+// isInsideQuotes returns true if currently inside quotes
+func (qt *QuoteTracker) isInsideQuotes() bool {
+	return qt.activeQuoteChar != 0
+}
+
+// isStandaloneDigit checks if a digit at position i is standalone (preceded by space or at start)
+func isStandaloneDigit(runes []rune, i int) bool {
+	return i == 0 || runes[i-1] == ' '
+}
+
+// isGluedToArgument checks if a redirection operator is glued to an argument (no space before)
+func isGluedToArgument(runes []rune, i int) bool {
+	if i-1 >= 0 && runes[i-1] >= '0' && runes[i-1] <= '9' {
+		return i-2 < 0 || runes[i-2] != ' '
+	}
+	return false
+}
+
+// isGluedToArgumentGeneral checks if a redirection operator is glued to any non-space character
+func isGluedToArgumentGeneral(runes []rune, i int) bool {
+	return i-1 >= 0 && runes[i-1] != ' '
+}
+
+// createRedirectionInfo creates a RedirectionInfo struct from parsed components
+func createRedirectionInfo(redirectType int, filename string) RedirectionInfo {
+	return RedirectionInfo{
+		Type:     redirectType,
+		Filename: stripQuotes(filename),
+		Found:    true,
+	}
+}
+
+// tryParseNumberedRedirection attempts to parse '1>' or '2>' redirection
+func tryParseNumberedRedirection(runes []rune, i int, expectedDigit rune, redirectType int) (commandPart string, redirect RedirectionInfo, found bool) {
+	n := len(runes)
+
+	// Check for pattern: digit + '>'
+	if i+1 < n && runes[i] == expectedDigit && runes[i+1] == '>' {
+		if isStandaloneDigit(runes, i) {
+			commandPart = strings.TrimSpace(string(runes[:i]))
+			filename := strings.TrimSpace(string(runes[i+2:]))
+			return commandPart, createRedirectionInfo(redirectType, filename), true
+		}
+	}
+	return "", RedirectionInfo{}, false
+}
+
+// tryParseNumberedAppendRedirection attempts to parse '1>>' or '2>>' redirection
+func tryParseNumberedAppendRedirection(runes []rune, i int, expectedDigit rune, redirectType int) (commandPart string, redirect RedirectionInfo, found bool) {
+	n := len(runes)
+
+	// Check for pattern: digit + '>>'
+	if i+2 < n && runes[i] == expectedDigit && runes[i+1] == '>' && runes[i+2] == '>' {
+		if isStandaloneDigit(runes, i) {
+			commandPart = strings.TrimSpace(string(runes[:i]))
+			filename := strings.TrimSpace(string(runes[i+3:]))
+			return commandPart, createRedirectionInfo(redirectType, filename), true
+		}
+	}
+	return "", RedirectionInfo{}, false
+}
+
+// parseGenericRedirection handles generic '>' redirection with optional file descriptor
+func parseGenericRedirection(runes []rune, i int) (commandPart string, redirect RedirectionInfo) {
+	// Skip if redirection is glued to an argument
+	if isGluedToArgument(runes, i) {
+		return "", RedirectionInfo{}
+	}
+
+	// Walk backwards beyond spaces to find potential file descriptor
+	j := i - 1
+	for j >= 0 && runes[j] == ' ' {
+		j--
+	}
+
+	redirectType := StdoutRedirection
+	commandEndIndex := j + 1
+
+	// Check for explicit file descriptor (1 or 2)
+	if j >= 0 && (runes[j] == '1' || runes[j] == '2') {
+		if isStandaloneDigit(runes, j) {
+			if runes[j] == '2' {
+				redirectType = StderrRedirection
+			}
+			commandEndIndex = j
+		}
+	}
+
+	commandPart = strings.TrimSpace(string(runes[:commandEndIndex]))
+	filename := strings.TrimSpace(string(runes[i+1:]))
+	return commandPart, createRedirectionInfo(redirectType, filename)
+}
+
+// parseGenericAppendRedirection handles generic '>>' redirection with optional file descriptor
+func parseGenericAppendRedirection(runes []rune, i int) (commandPart string, redirect RedirectionInfo) {
+	n := len(runes)
+
+	// Make sure we have '>>' pattern
+	if i+1 >= n || runes[i+1] != '>' {
+		return "", RedirectionInfo{}
+	}
+
+	// Skip if redirection is glued to an argument (for >> we check any non-space character)
+	if isGluedToArgumentGeneral(runes, i) {
+		return "", RedirectionInfo{}
+	}
+
+	// Walk backwards beyond spaces to find potential file descriptor
+	j := i - 1
+	for j >= 0 && runes[j] == ' ' {
+		j--
+	}
+
+	redirectType := StdoutAppendRedirection
+	commandEndIndex := j + 1
+
+	// Check for explicit file descriptor (1 or 2)
+	if j >= 0 && (runes[j] == '1' || runes[j] == '2') {
+		if isStandaloneDigit(runes, j) {
+			if runes[j] == '2' {
+				redirectType = StderrAppendRedirection
+			}
+			commandEndIndex = j
+		}
+	}
+
+	commandPart = strings.TrimSpace(string(runes[:commandEndIndex]))
+	filename := strings.TrimSpace(string(runes[i+2:]))
+	return commandPart, createRedirectionInfo(redirectType, filename)
+}
+
+// findRedirection scans the line for the first unquoted redirection operator
+// and returns information about the redirection found
+func findRedirection(line string) (commandPart string, redirect RedirectionInfo) {
 	runes := []rune(line)
 	n := len(runes)
-	activeQuoteChar := rune(0)
+	quoteTracker := &QuoteTracker{}
 
-	// Scan for '1>' or '2>' first, then for '>'.
-	// This prioritizes specific stderr/stdout redirection over general output redirection.
 	for i := range n {
 		char := runes[i]
-		if char == '\'' || char == '"' { // Handle quotes
-			if activeQuoteChar == 0 {
-				activeQuoteChar = char
-			} else if activeQuoteChar == char {
-				activeQuoteChar = 0
-			}
-			continue
-		}
 
-		if activeQuoteChar == 0 { // Only look for redirection operators if not inside quotes
-			// Check for '2>'
-			if char == '2' && i+1 < n && runes[i+1] == '>' {
-				if i == 0 || runes[i-1] == ' ' { // Ensure '2' is standalone or preceded by space
-					commandPart = strings.TrimSpace(string(runes[:i]))
-					filenamePart = strings.TrimSpace(string(runes[i+2:]))
-					// Remove quotes from filename if present
-					filenamePart = stripQuotes(filenamePart)
-					return commandPart, filenamePart, StderrRedirection, true
-				}
+		// Update quote state
+		quoteTracker.updateQuoteState(char)
+
+		// Only look for redirection operators if not inside quotes
+		if !quoteTracker.isInsideQuotes() {
+			// Try parsing '2>>' redirection first (longer pattern)
+			if cmdPart, redir, found := tryParseNumberedAppendRedirection(runes, i, '2', StderrAppendRedirection); found {
+				return cmdPart, redir
 			}
-			// Check for '1>'
-			if char == '1' && i+1 < n && runes[i+1] == '>' {
-				if i == 0 || runes[i-1] == ' ' { // Ensure '1' is standalone or preceded by space
-					commandPart = strings.TrimSpace(string(runes[:i]))
-					filenamePart = strings.TrimSpace(string(runes[i+2:]))
-					filenamePart = stripQuotes(filenamePart)
-					return commandPart, filenamePart, StdoutRedirection, true
-				}
+
+			// Try parsing '1>>' redirection
+			if cmdPart, redir, found := tryParseNumberedAppendRedirection(runes, i, '1', StdoutAppendRedirection); found {
+				return cmdPart, redir
 			}
-			// Check for generic '>' possibly preceded by spaces and optional file descriptor (e.g. "1 >" or just ">")
+
+			// Try parsing '2>' redirection
+			if cmdPart, redir, found := tryParseNumberedRedirection(runes, i, '2', StderrRedirection); found {
+				return cmdPart, redir
+			}
+
+			// Try parsing '1>' redirection
+			if cmdPart, redir, found := tryParseNumberedRedirection(runes, i, '1', StdoutRedirection); found {
+				return cmdPart, redir
+			}
+
+			// Try parsing generic '>>' or '>' redirection
 			if char == '>' {
-				// Check if the character immediately before '>' (without skipping spaces) is a space or it is the
-				// beginning of the line. If it's not a space, this '>' is glued to the previous token (e.g. "ls2>err.txt")
-				// and should be treated as part of that argument rather than a redirection operator.
-				if i-1 >= 0 && runes[i-1] >= '0' && runes[i-1] <= '9' {
-					// If the digit is glued to previous character (no space before it), this is likely part
-					// of an argument like "arg1>file" or "ls2>err.txt" and should not be treated as redirection.
-					if i-2 < 0 || runes[i-2] != ' ' {
-						continue
+				// Check for '>>' first (longer pattern)
+				if i+1 < n && runes[i+1] == '>' {
+					// Try to parse '>>' - if it succeeds, return it
+					if cmdPart, redir := parseGenericAppendRedirection(runes, i); redir.Found {
+						return cmdPart, redir
 					}
+					// If '>>' was detected but rejected (e.g., glued to argument), skip this position entirely
+					// This prevents "hello>>out.txt" from being parsed as "hello>" with redirection
+					continue
 				}
 
-				// Walk backwards beyond any spaces to detect a standalone file-descriptor digit (1 or 2).
-				j := i - 1
-				for j >= 0 && runes[j] == ' ' {
-					j--
+				// Single '>' redirection (only if not part of '>>')
+				if cmdPart, redir := parseGenericRedirection(runes, i); redir.Found {
+					return cmdPart, redir
 				}
-
-				redirectTypeLocal := StdoutRedirection // assume stdout unless we detect "2" specifically
-				commandEndIndex := j + 1               // slice end (exclusive) for command part
-
-				// Earlier we skipped redirection when a bare digit appeared before '>'. That logic has been
-				// superseded by the simpler check above (immediate char before '>' must be a space).
-				// No further digit-based skipping is required here.
-
-				if j >= 0 && (runes[j] == '1' || runes[j] == '2') {
-					// Potential explicit fd redirection like "1>" or "2>" or "1 >" / "2 >"
-					// Ensure it's standalone (start of line or preceded by space)
-					if j == 0 || runes[j-1] == ' ' {
-						if runes[j] == '2' {
-							redirectTypeLocal = StderrRedirection
-						} else {
-							redirectTypeLocal = StdoutRedirection
-						}
-						commandEndIndex = j // don't include the fd digit in command part
-					}
-				}
-
-				commandPart = strings.TrimSpace(string(runes[:commandEndIndex]))
-				filenamePart = strings.TrimSpace(string(runes[i+1:]))
-				filenamePart = stripQuotes(filenamePart)
-				return commandPart, filenamePart, redirectTypeLocal, true
 			}
 		}
 	}
 
-	return line, "", NoRedirection, false // No redirect operator found, commandPart is the original line
+	return line, RedirectionInfo{Found: false}
+}
+
+// tokenize splits a command string into arguments, respecting quotes
+func tokenize(commandStr string) ([]string, error) {
+	if strings.TrimSpace(commandStr) == "" {
+		return []string{}, nil
+	}
+
+	var args []string
+	var currentArg strings.Builder
+	var activeQuoteChar rune = 0
+	justClosedEmptyQuote := false
+
+	runes := []rune(strings.TrimSpace(commandStr))
+
+	for i := range runes {
+		char := runes[i]
+
+		// Reset empty quote flag unless we're handling a space after empty quote
+		if !(char == ' ' && justClosedEmptyQuote) {
+			justClosedEmptyQuote = false
+		}
+
+		// Handle quote characters
+		if char == '\'' || char == '"' {
+			if activeQuoteChar == 0 {
+				// Start quote
+				activeQuoteChar = char
+			} else if activeQuoteChar == char {
+				// End quote
+				activeQuoteChar = 0
+				if currentArg.Len() == 0 {
+					justClosedEmptyQuote = true
+				}
+			} else {
+				// Different quote inside active quote - treat as literal
+				currentArg.WriteRune(char)
+			}
+		} else if char == ' ' && activeQuoteChar == 0 {
+			// Space outside quotes - end current argument
+			if currentArg.Len() > 0 {
+				args = append(args, currentArg.String())
+				currentArg.Reset()
+			} else if justClosedEmptyQuote {
+				args = append(args, "")
+				justClosedEmptyQuote = false
+			}
+		} else {
+			// Regular character or space inside quotes
+			currentArg.WriteRune(char)
+		}
+	}
+
+	// Add final argument if any
+	if currentArg.Len() > 0 || justClosedEmptyQuote || activeQuoteChar != 0 {
+		args = append(args, currentArg.String())
+	}
+
+	return args, nil
+}
+
+// validateRedirection checks if redirection parameters are valid
+func validateRedirection(redirect RedirectionInfo) error {
+	if redirect.Found && redirect.Filename == "" {
+		return shellerrors.NewParseError("missing filename for redirection")
+	}
+	return nil
 }
 
 // stripQuotes removes a single layer of leading and trailing quotes (' or ") if present.
@@ -117,82 +310,58 @@ func stripQuotes(s string) string {
 	return s
 }
 
-// ParseLine splits a line into arguments and an output filename if redirection is present.
-// It handles '>', '1>' and '2>' output redirection operators.
+// ParseLine splits a line into arguments and redirection information if present.
+// It handles '>', '>>', '1>', '1>>', '2>', and '2>>' output redirection operators.
 // Text within quotes is treated as a single argument, and the quotes are removed.
-// e.g., echo 'hello world' > out.txt -> args=["echo", "hello world"], outputFile="out.txt"
-// e.g., ls /foo 2> err.txt -> args=["ls", "/foo"], errorFile="err.txt"
+// e.g., echo 'hello world' > out.txt -> args=["echo", "hello world"], outputFile="out.txt", append=false
+// e.g., echo 'hello world' >> out.txt -> args=["echo", "hello world"], outputFile="out.txt", append=true
+// e.g., ls /foo 2> err.txt -> args=["ls", "/foo"], errorFile="err.txt", append=false
 func ParseLine(line string) (args []string, outputFile string, errorFile string, err error) {
-	args = make([]string, 0) // Ensure args is initialized
+	args, outputFile, errorFile, _, _, err = ParseLineWithMode(line)
+	return args, outputFile, errorFile, err
+}
 
-	trimmedOriginalLine := strings.TrimSpace(line)
-	if trimmedOriginalLine == "" {
-		return args, "", "", nil // Empty line results in no arguments and no redirection
+// ParseLineWithMode splits a line into arguments and redirection information with append mode.
+// It handles '>', '>>', '1>', '1>>', '2>', and '2>>' output redirection operators.
+// Text within quotes is treated as a single argument, and the quotes are removed.
+// Returns append mode flags for both stdout and stderr redirection.
+func ParseLineWithMode(line string) (args []string, outputFile string, errorFile string, outputAppend bool, errorAppend bool, err error) {
+	// Handle empty input
+	if strings.TrimSpace(line) == "" {
+		return []string{}, "", "", false, false, nil
 	}
 
-	commandPartStr, filenameStr, redirectType, redirectFound := splitByRedirect(trimmedOriginalLine)
+	// Find and extract redirection
+	commandPart, redirect := findRedirection(line)
 
-	if redirectFound {
-		if filenameStr == "" {
-			return nil, "", "", shellerrors.NewParseError("missing filename for redirection")
-		}
-		switch redirectType {
+	// Validate redirection
+	if err := validateRedirection(redirect); err != nil {
+		return nil, "", "", false, false, err
+	}
+
+	// Set output files and append modes based on redirection type
+	if redirect.Found {
+		switch redirect.Type {
 		case StdoutRedirection:
-			outputFile = filenameStr
+			outputFile = redirect.Filename
+			outputAppend = false
+		case StdoutAppendRedirection:
+			outputFile = redirect.Filename
+			outputAppend = true
 		case StderrRedirection:
-			errorFile = filenameStr
+			errorFile = redirect.Filename
+			errorAppend = false
+		case StderrAppendRedirection:
+			errorFile = redirect.Filename
+			errorAppend = true
 		}
 	}
 
-	// If no redirect, commandPartStr is trimmedOriginalLine, and outputFile/errorFile are ""
-
-	// Proceed to parse commandPartStr using the existing argument parsing logic
-	var currentArg strings.Builder
-	var activeQuoteChar rune = 0 // 0 means not in quotes, '\'' or '"' means in that quote type
-	justClosedEmptyQuote := false
-
-	// If commandPartStr is empty (e.g., line was "> out.txt"), no args to parse.
-	if strings.TrimSpace(commandPartStr) == "" {
-		return args, outputFile, errorFile, nil
+	// Tokenize the command part
+	args, err = tokenize(commandPart)
+	if err != nil {
+		return nil, "", "", false, false, err
 	}
 
-	lineRunes := []rune(strings.TrimSpace(commandPartStr)) // Parse the command part
-
-	for i := range lineRunes {
-		char := lineRunes[i]
-
-		if !(char == ' ' && justClosedEmptyQuote) {
-			justClosedEmptyQuote = false
-		}
-
-		if char == '\'' || char == '"' { // A quote character is encountered
-			if activeQuoteChar == 0 { // Not currently in a quote, so start one
-				activeQuoteChar = char
-			} else if activeQuoteChar == char { // Closing the currently active quote type
-				activeQuoteChar = 0 // Exited quote mode
-				if currentArg.Len() == 0 {
-					justClosedEmptyQuote = true
-				}
-			} else { // Different quote character inside an active quote (e.g. ' inside "")
-				currentArg.WriteRune(char) // Treat as a literal character
-			}
-		} else if char == ' ' && activeQuoteChar == 0 { // Space outside of any quote
-			if currentArg.Len() > 0 {
-				args = append(args, currentArg.String())
-				currentArg.Reset()
-			} else if justClosedEmptyQuote { // An empty quote pair was just closed before this space
-				args = append(args, "")
-				justClosedEmptyQuote = false
-			}
-		} else { // Regular character, or space inside quotes
-			currentArg.WriteRune(char)
-		}
-	}
-
-	// Add the last argument if any, or if an unclosed quote exists (maintaining original behavior)
-	if currentArg.Len() > 0 || justClosedEmptyQuote || activeQuoteChar != 0 {
-		args = append(args, currentArg.String())
-	}
-
-	return args, outputFile, errorFile, nil
+	return args, outputFile, errorFile, outputAppend, errorAppend, nil
 }

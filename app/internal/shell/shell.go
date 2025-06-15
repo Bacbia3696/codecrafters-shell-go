@@ -76,40 +76,90 @@ func (s *Shell) IsBuiltin(cmd string) bool {
 
 // Execute executes a single command line
 func (s *Shell) Execute(inputLine string) {
-	args, outputFile, errorFile, err := s.parser.ParseLine(inputLine)
+	// Try to use the new append-aware parser if available
+	if parserWithMode, ok := s.parser.(CommandParserWithMode); ok {
+		args, outputFile, errorFile, outputAppend, errorAppend, err := parserWithMode.ParseLineWithMode(inputLine)
 
-	if err != nil {
-		fmt.Fprintf(s.stderr, "%s\n", err.Error())
-		return
-	}
-
-	if len(args) == 0 {
-		return // Empty command, nothing to do
-	}
-
-	// Setup redirection using IOManager
-	cleanup, err := s.ioManager.SetupRedirection(outputFile, errorFile)
-	if err != nil {
-		fmt.Fprintf(s.stderr, "%s\n", err.Error())
-		return
-	}
-	defer cleanup()
-
-	// Get current streams from IOManager
-	currentStdout, currentStderr := s.ioManager.GetCurrentStreams()
-
-	// Get command and arguments
-	command := args[0]
-	cmdArgs := args[1:]
-
-	// Execute command
-	if s.builtins.IsBuiltin(command) {
-		err := s.builtins.Execute(command, cmdArgs, currentStdout, currentStderr)
 		if err != nil {
-			fmt.Fprintf(currentStderr, "%s\n", err.Error())
+			fmt.Fprintf(s.stderr, "%s\n", err.Error())
+			return
+		}
+
+		if len(args) == 0 {
+			return // Empty command, nothing to do
+		}
+
+		// Setup redirection using IOManager with append mode support
+		if ioManagerWithMode, ok := s.ioManager.(IOManagerWithMode); ok {
+			cleanup, err := ioManagerWithMode.SetupRedirectionWithMode(outputFile, errorFile, outputAppend, errorAppend)
+			if err != nil {
+				fmt.Fprintf(s.stderr, "%s\n", err.Error())
+				return
+			}
+			defer cleanup()
+		} else {
+			// Fallback to basic redirection (no append support)
+			cleanup, err := s.ioManager.SetupRedirection(outputFile, errorFile)
+			if err != nil {
+				fmt.Fprintf(s.stderr, "%s\n", err.Error())
+				return
+			}
+			defer cleanup()
+		}
+
+		// Get current streams from IOManager
+		currentStdout, currentStderr := s.ioManager.GetCurrentStreams()
+
+		// Get command and arguments
+		command := args[0]
+		cmdArgs := args[1:]
+
+		// Execute command
+		if s.builtins.IsBuiltin(command) {
+			err := s.builtins.Execute(command, cmdArgs, currentStdout, currentStderr)
+			if err != nil {
+				fmt.Fprintf(currentStderr, "%s\n", err.Error())
+			}
+		} else {
+			s.executor.Execute(command, cmdArgs, s.stdin, currentStdout, currentStderr)
 		}
 	} else {
-		s.executor.Execute(command, cmdArgs, s.stdin, currentStdout, currentStderr)
+		// Fallback to original parsing (no append support)
+		args, outputFile, errorFile, err := s.parser.ParseLine(inputLine)
+
+		if err != nil {
+			fmt.Fprintf(s.stderr, "%s\n", err.Error())
+			return
+		}
+
+		if len(args) == 0 {
+			return // Empty command, nothing to do
+		}
+
+		// Setup redirection using IOManager
+		cleanup, err := s.ioManager.SetupRedirection(outputFile, errorFile)
+		if err != nil {
+			fmt.Fprintf(s.stderr, "%s\n", err.Error())
+			return
+		}
+		defer cleanup()
+
+		// Get current streams from IOManager
+		currentStdout, currentStderr := s.ioManager.GetCurrentStreams()
+
+		// Get command and arguments
+		command := args[0]
+		cmdArgs := args[1:]
+
+		// Execute command
+		if s.builtins.IsBuiltin(command) {
+			err := s.builtins.Execute(command, cmdArgs, currentStdout, currentStderr)
+			if err != nil {
+				fmt.Fprintf(currentStderr, "%s\n", err.Error())
+			}
+		} else {
+			s.executor.Execute(command, cmdArgs, s.stdin, currentStdout, currentStderr)
+		}
 	}
 }
 

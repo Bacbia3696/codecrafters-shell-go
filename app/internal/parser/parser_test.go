@@ -526,3 +526,114 @@ func TestParseLineQuotedRedirection(t *testing.T) {
 		t.Errorf("Expected empty stderr but got: %s", stderr)
 	}
 }
+
+func TestParseLineAppendRedirection(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedArgs   []string
+		expectedOutput string
+		expectedError  string
+		outputAppend   bool
+		errorAppend    bool
+	}{
+		{
+			name:           "simple append redirection >>",
+			input:          "echo hello >> out.txt",
+			expectedArgs:   []string{"echo", "hello"},
+			expectedOutput: "out.txt",
+			outputAppend:   true,
+		},
+		{
+			name:           "append redirection 1>>",
+			input:          "echo hello 1>> out.txt",
+			expectedArgs:   []string{"echo", "hello"},
+			expectedOutput: "out.txt",
+			outputAppend:   true,
+		},
+		{
+			name:          "error append redirection 2>>",
+			input:         "ls /nonexistent 2>> err.txt",
+			expectedArgs:  []string{"ls", "/nonexistent"},
+			expectedError: "err.txt",
+			errorAppend:   true,
+		},
+		{
+			name:           "append with spaces around >>",
+			input:          "echo test  >>  output.log",
+			expectedArgs:   []string{"echo", "test"},
+			expectedOutput: "output.log",
+			outputAppend:   true,
+		},
+		{
+			name:           "append with quoted filename",
+			input:          "echo data >> \"my file.txt\"",
+			expectedArgs:   []string{"echo", "data"},
+			expectedOutput: "my file.txt",
+			outputAppend:   true,
+		},
+		{
+			name:           "append with single quoted filename",
+			input:          "echo data >> 'my file.txt'",
+			expectedArgs:   []string{"echo", "data"},
+			expectedOutput: "my file.txt",
+			outputAppend:   true,
+		},
+		{
+			name:         "append operator inside quotes should not redirect",
+			input:        "echo 'hello >> world'",
+			expectedArgs: []string{"echo", "hello >> world"},
+		},
+		{
+			name:         "2>> operator inside quotes should not redirect",
+			input:        "echo \"error 2>> log\"",
+			expectedArgs: []string{"echo", "error 2>> log"},
+		},
+		{
+			name:           "mixed regular and append redirection - regular first",
+			input:          "echo hello > out.txt",
+			expectedArgs:   []string{"echo", "hello"},
+			expectedOutput: "out.txt",
+			outputAppend:   false,
+		},
+		{
+			name:         "no space before >> (glued to argument)",
+			input:        "echo hello>>out.txt",
+			expectedArgs: []string{"echo", "hello>>out.txt"},
+		},
+		{
+			name:          "2>> with space before digit",
+			input:         "ls /foo 2 >> err.txt",
+			expectedArgs:  []string{"ls", "/foo"},
+			expectedError: "err.txt",
+			errorAppend:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args, outputFile, errorFile, outputAppend, errorAppend, err := ParseLineWithMode(tt.input)
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if !reflect.DeepEqual(args, tt.expectedArgs) {
+				t.Errorf("args = %v, want %v", args, tt.expectedArgs)
+			}
+			if outputFile != tt.expectedOutput {
+				t.Errorf("outputFile = %q, want %q", outputFile, tt.expectedOutput)
+			}
+			if errorFile != tt.expectedError {
+				t.Errorf("errorFile = %q, want %q", errorFile, tt.expectedError)
+			}
+			if outputAppend != tt.outputAppend {
+				t.Errorf("outputAppend = %v, want %v", outputAppend, tt.outputAppend)
+			}
+			if errorAppend != tt.errorAppend {
+				t.Errorf("errorAppend = %v, want %v", errorAppend, tt.errorAppend)
+			}
+		})
+	}
+}

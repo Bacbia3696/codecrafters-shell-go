@@ -11,6 +11,12 @@ type CommandParser interface {
 	ParseLine(line string) (args []string, outputFile string, errorFile string, err error)
 }
 
+// CommandParserWithMode extends CommandParser to support append mode
+type CommandParserWithMode interface {
+	CommandParser
+	ParseLineWithMode(line string) (args []string, outputFile string, errorFile string, outputAppend bool, errorAppend bool, err error)
+}
+
 // CommandExecutor defines the interface for executing external commands
 type CommandExecutor interface {
 	Execute(command string, args []string, stdin io.Reader, stdout, stderr io.Writer)
@@ -29,4 +35,10 @@ type BuiltinRegistry interface {
 type IOManager interface {
 	SetupRedirection(outputFile, errorFile string) (cleanup func(), err error)
 	GetCurrentStreams() (stdout, stderr io.Writer)
+}
+
+// IOManagerWithMode extends IOManager to support append mode
+type IOManagerWithMode interface {
+	IOManager
+	SetupRedirectionWithMode(outputFile, errorFile string, outputAppend, errorAppend bool) (cleanup func(), err error)
 }
