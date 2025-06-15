@@ -24,6 +24,36 @@ Currently, the shell supports:
 *   Output redirection to a file using `> filename`.
 *   Graceful exit on `EOF` (Ctrl+D).
 
+## Architecture
+
+The shell is built with a clean, modular architecture following SOLID principles:
+
+```
+┌───────────────────┐
+│      Shell        │  ← Main orchestrator
+├───────────────────┤
+│   BuiltinRegistry │  ← Manages built-in commands
+│   CommandParser   │  ← Parses command lines  
+│   CommandExecutor │  ← Executes external commands
+│   IOManager       │  ← Handles I/O redirection
+└───────────────────┘
+```
+
+### Key Components
+
+- **Shell**: Main orchestrator that coordinates parsing, execution, and I/O
+- **BuiltinRegistry**: Manages built-in commands (echo, pwd, cd, type, exit)
+- **CommandParser**: Parses command lines, handles quotes and redirection
+- **CommandExecutor**: Finds and executes external commands from PATH
+- **IOManager**: Handles stdout/stderr redirection to files
+
+### Design Principles
+
+- **Dependency Injection**: Shell accepts interfaces, making it highly testable
+- **Single Responsibility**: Each component has a focused purpose
+- **Interface Segregation**: Clean interfaces define component contracts
+- **No Global State**: Built-ins receive explicit I/O streams instead of using globals
+
 ## Prerequisites
 
 *   Go (version 1.24 or later) installed locally.

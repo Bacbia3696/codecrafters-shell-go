@@ -3,8 +3,13 @@ package shell
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/codecrafters-io/shell-starter-go/app/internal/builtins"
+	"github.com/codecrafters-io/shell-starter-go/app/internal/executor"
+	"github.com/codecrafters-io/shell-starter-go/app/internal/parser"
 )
 
 // testShell creates a shell instance with custom IO for testing
@@ -14,25 +19,25 @@ func testShell() (*Shell, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer) {
 	errBuf := new(bytes.Buffer)
 
 	shell := &Shell{
-		stdin:         inBuf,
-		stdout:        outBuf,
-		stderr:        errBuf,
-		prompt:        "$ ",
-		builtinCmds:   make(map[string]CommandHandler),
-		commandFinder: func(string) string { return "" }, // Mock finder that finds nothing
+		stdin:     inBuf,
+		stdout:    outBuf,
+		stderr:    errBuf,
+		prompt:    "$ ",
+		builtins:  builtins.NewRegistry(outBuf, errBuf),
+		ioManager: NewIOManager(outBuf, errBuf),
+		executor:  executor.NewService(),
+		parser:    parser.NewService(),
 	}
 	shell.reader = bufio.NewReader(strings.NewReader(""))
 
-	// Register test command handlers
-	shell.builtinCmds["echo"] = func(args []string) {
-		outBuf.WriteString(strings.Join(args, " "))
-		outBuf.WriteString("\n")
-	}
+	// Configure with a mock command finder that finds nothing
+	shell.builtins.SetCommandFinder(func(string) string { return "" })
 
-	shell.builtinCmds["fail"] = func(args []string) {
-		errBuf.WriteString("Command failed: " + strings.Join(args, " "))
-		errBuf.WriteString("\n")
-	}
+	// Register a test command that writes to stderr for testing error handling
+	shell.builtins.Register("fail", func(args []string, stdout, stderr io.Writer) error {
+		stderr.Write([]byte("Command failed: " + strings.Join(args, " ") + "\n"))
+		return nil
+	})
 
 	return shell, inBuf, outBuf, errBuf
 }
@@ -90,5 +95,35 @@ func TestShellIsBuiltin(t *testing.T) {
 
 	if shell.IsBuiltin("nonexistent") {
 		t.Error("Expected 'nonexistent' to not be recognized as builtin")
+	}
+}
+
+func TestShellExecuteWithRedirection(t *testing.T) {
+	shell, _, outBuf, errBuf := testShell()
+
+	// Test stdout redirection - this should not appear in outBuf since it's redirected
+	shell.Execute("echo hello > /tmp/test_output.txt")
+
+	// The output should be empty since it was redirected
+	if outBuf.String() != "" {
+		t.Errorf("Expected no output to stdout, but got %q", outBuf.String())
+	}
+
+	if errBuf.String() != "" {
+		t.Errorf("Expected no errors, but got: %q", errBuf.String())
+	}
+}
+
+func TestShellExecuteEmptyCommand(t *testing.T) {
+	shell, _, outBuf, errBuf := testShell()
+
+	shell.Execute("")
+
+	if outBuf.String() != "" {
+		t.Errorf("Expected no output for empty command, but got %q", outBuf.String())
+	}
+
+	if errBuf.String() != "" {
+		t.Errorf("Expected no errors for empty command, but got: %q", errBuf.String())
 	}
 }

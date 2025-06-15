@@ -5,7 +5,6 @@ import (
 )
 
 func main() {
-	// Create and run a new shell instance
 	sh := shell.NewShell()
 	sh.Run()
 }
