@@ -15,10 +15,8 @@ Thumbs.db
 *.dylib
 *.test
 *.out
-go.work
 
 # Build artifacts
-shell
 /tmp/
 
 # IDE
