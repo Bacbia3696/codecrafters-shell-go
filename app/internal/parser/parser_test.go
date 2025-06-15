@@ -97,7 +97,7 @@ func TestParseLine(t *testing.T) {
 		{
 			name:               "output redirection with args >",
 			line:               "echo hello world > message.txt",
-			expectedArgs:       []string{"echo", "hello world"},
+			expectedArgs:       []string{"echo", "hello", "world"},
 			expectedOutputFile: "message.txt",
 			expectedErrorFile:  "",
 			expectError:        false,
@@ -105,7 +105,7 @@ func TestParseLine(t *testing.T) {
 		{
 			name:               "error redirection with args 2>",
 			line:               "echo hello world 2> errors.log",
-			expectedArgs:       []string{"echo", "hello world"},
+			expectedArgs:       []string{"echo", "hello", "world"},
 			expectedOutputFile: "",
 			expectedErrorFile:  "errors.log",
 			expectError:        false,
@@ -130,6 +130,14 @@ func TestParseLine(t *testing.T) {
 			name:               "redirection 2> with space before but not part of command",
 			line:               "ls 2> err.txt",
 			expectedArgs:       []string{"ls"},
+			expectedOutputFile: "",
+			expectedErrorFile:  "err.txt",
+			expectError:        false,
+		},
+		{
+			name:               "redirection 2> with space before and command arg",
+			line:               "ls -1 file 2> err.txt",
+			expectedArgs:       []string{"ls", "-1", "file"},
 			expectedOutputFile: "",
 			expectedErrorFile:  "err.txt",
 			expectError:        false,
@@ -353,7 +361,7 @@ func TestParseLine(t *testing.T) {
 		{
 			name:               "output redirection with args 1>",
 			line:               "echo hello world 1> message.txt",
-			expectedArgs:       []string{"echo", "hello world"},
+			expectedArgs:       []string{"echo", "hello", "world"},
 			expectedOutputFile: "message.txt",
 			expectedErrorFile:  "",
 			expectError:        false,

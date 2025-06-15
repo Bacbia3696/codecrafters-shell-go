@@ -96,7 +96,7 @@ func (r *Registry) handlePwd(args []string, stdout, stderr io.Writer) error {
 func (r *Registry) handleCd(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "cd: missing argument")
-		return fmt.Errorf("missing argument")
+		return nil // Don't return error since we already wrote to stderr
 	}
 
 	targetDir := args[0]
@@ -104,7 +104,7 @@ func (r *Registry) handleCd(args []string, stdout, stderr io.Writer) error {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			fmt.Fprintf(stderr, "cd: error getting home directory: %v\n", err)
-			return err
+			return nil // Don't return error since we already wrote to stderr
 		}
 		targetDir = homeDir
 	}
@@ -112,7 +112,7 @@ func (r *Registry) handleCd(args []string, stdout, stderr io.Writer) error {
 	err := os.Chdir(targetDir)
 	if err != nil {
 		fmt.Fprintf(stderr, "cd: %s: No such file or directory\n", args[0])
-		return err
+		return nil // Don't return error since we already wrote to stderr
 	}
 	return nil
 }

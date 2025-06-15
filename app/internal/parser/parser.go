@@ -194,13 +194,5 @@ func ParseLine(line string) (args []string, outputFile string, errorFile string,
 		args = append(args, currentArg.String())
 	}
 
-	// Special case: If a redirection was found and we ended up with more than two arguments,
-	// merge everything after the first argument into a single argument. This aligns with test
-	// expectations where, for example, "echo hello world > out.txt" should yield args
-	// ["echo", "hello world"].
-	if redirectFound && len(args) > 2 {
-		joined := strings.Join(args[1:], " ")
-		args = []string{args[0], joined}
-	}
 	return args, outputFile, errorFile, nil
 }
